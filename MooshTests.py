@@ -14,6 +14,12 @@ drawing = False
 keepRect = False
 # Call-Back Functions
 def mouseClick(event, x, y, flags, param):
+    """
+    Define process upon mouse actions
+    Mouse left-click down: begin drawing, record initial points
+    Mouse left-click up: finish drawing, record final points for rect
+    Mouse move while drawing: show box to guide with drawing
+    """
     global x1, y1, x2, y2, drawing, keepRect, subFrame, subFrameHeight, subFrameWidth
     if event == cv2.EVENT_LBUTTONDOWN:
         drawing = True
@@ -40,7 +46,7 @@ fvs = FileVideoStream(VID).start()
 time.sleep(1.0)
 fps = FPS().start()
 
-# GUI Init
+# GUI init
 window_title = "MooshVision 2021"
 cv2.namedWindow(window_title)
 cv2.setMouseCallback(window_title, mouseClick)
@@ -49,20 +55,28 @@ cv2.createTrackbar("Contrast", window_title, 100, sliderMax, brightnessContrastS
 cv2.createTrackbar("Brightness", window_title, 500, sliderMax, brightnessContrastSlider)
 brightnessContrastSlider(0)
 
+# Tracker init
+tracking = False
+tracker = cv2.TrackerCSRT_create()
+
 while fvs.running():
     frame = fvs.read()
     frame = imutils.resize(frame, width = int(3840/3))
-    frameCopy = frame # create a copy for a baseline
+    # frameCopy = frame # create a copy for a baseline
 
-    frame = processImage.brightnessContrast(frame, (currentContrast/100), (currentBrightness-500)/2)
+    #frame = processImage.brightnessContrast(frame, (currentContrast/100), (currentBrightness-500)/2)
     if keepRect == True:
+        # process small window view
         frameHeight, frameWidth = fvs.params()
-        subFrame = frameCopy[y1:y2, x1:x2]
-        processedSubFrame = processImage.MooshEdits(subFrame)
-        processedSubFrame = imutils.resize(processedSubFrame, width = 200)
-        frame[50:int(subFrameHeight*200/subFrameWidth+50), 10:210] = processedSubFrame
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0,255,0), 1, cv2.LINE_4)
-
+        subFrame = frame[y1:y2, x1:x2]
+        subFrame = processImage.brightnessContrast(subFrame, (currentContrast/100),
+                    (currentBrightness-500)/2)
+        (processedSubFrame, x_init, y_init, w_init, h_init) = processImage.MooshEdits(subFrame)
+        processedSubFrame = imutils.resize(processedSubFrame, width = 300)
+        frame[50:int(subFrameHeight*300/subFrameWidth+50), 10:310] = processedSubFrame
+    # update tracker (if applicable)
+    if tracking == True:
+        frame = processImage.updateTracker(frame, tracker)
 
     cv2.putText(frame, "Queue Size: {}".format(fvs.Q.qsize()), (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,0), 2)
@@ -74,8 +88,15 @@ while fvs.running():
         print("Quitting...")
         break
     if key == ord("c"):
+        # Clear View
         keepRect = False
+        #tracking = False
         cv2.imshow(window_title, processedFrame)
+    if key == ord("t"):
+        # Begin Tracking
+        tracking = True
+        boxExpanded = (int(x_init+x1-0.2*w_init), int(y_init+y1-0.2*h_init), int(1.4*w_init), int(1.4*h_init))
+        tracker.init(frame, boxExpanded)
     fps.update()
 
 
